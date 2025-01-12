@@ -2,6 +2,8 @@ import socket
 import threading
 import struct
 import time
+from warnings import catch_warnings
+
 
 # ANSI color codes
 class Colors:
@@ -32,84 +34,100 @@ def udp_offer_broadcast(server_udp_port, server_tcp_port):
             print(f"{Colors.CYAN}[UDP OFFER]{Colors.WHITE} Broadcast sent on UDP port {Colors.RED}{server_udp_port}")
             time.sleep(1)
 
-def handle_client_tcp(connection, address):
+def handle_tcp(server_ip, server_tcp_port):
     """Handles a TCP connection with a client."""
-    try:
-        print(f"{Colors.GREEN}[TCP CONNECTION]{Colors.WHITE} Connected to {address}")
-        file_size = int(connection.recv(1024).strip().decode('utf-8'))
-        print(f"{Colors.CYAN}[TCP REQUEST]{Colors.WHITE} Client requested {file_size} bytes")
 
-        # Sending the requested file size worth of data
-        connection.sendall(b'X' * file_size)
-        print(f"{Colors.BLUE}[TCP TRANSFER]{Colors.WHITE} Sent {file_size} bytes to {address}")
 
-    except Exception as e:
-        print(f"{Colors.RED}[ERROR]{Colors.WHITE} {e}")
-
-    finally:
-        connection.close()
-
-def handle_client_udp(server_socket):
-    """Handles a UDP connection with a client."""
-    while True:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_socket:
+        tcp_socket.bind((server_ip, server_tcp_port))  # Bind to the specific IP and port
+        tcp_socket.listen()
+        # Accept TCP connections
+        connection, address = tcp_socket.accept()
         try:
-            data, client_address = server_socket.recvfrom(1024)
+            print(f"{Colors.GREEN}[TCP CONNECTION]{Colors.WHITE} Connected to {address}")
+            file_size = int(connection.recv(1024).strip().decode('utf-8'))
+            print(f"{Colors.CYAN}[TCP REQUEST]{Colors.WHITE} Client requested {file_size} bytes")
 
-            # Reject and ignore short packets silently
-            if len(data) < 13:
-                continue
+            # Sending the requested file size worth of data
+            connection.sendall(b'X' * file_size)
+            print(f"{Colors.BLUE}[TCP TRANSFER]{Colors.WHITE} Sent {file_size} bytes to {address}")
 
-            # Unpack and validate the packet
-            cookie, msg_type, file_size = struct.unpack('!IBQ', data)
-            if cookie != MAGIC_COOKIE or msg_type != REQUEST_MESSAGE_TYPE:
-                continue
-
-            print(f"{Colors.BLUE}[UDP PROCESSING]{Colors.WHITE} Sending {file_size} bytes to {client_address}")
-
-            # Sending data in segments
-            total_segments = file_size // 1024
-            for i in range(total_segments):
-                payload = struct.pack('!IBQQ', MAGIC_COOKIE, PAYLOAD_MESSAGE_TYPE, total_segments, i) + b'X' * 1024
-                server_socket.sendto(payload, client_address)
-
-            print(f"{Colors.GREEN}[UDP TRANSFER]{Colors.WHITE} Completed transfer to {client_address}")
         except Exception as e:
             print(f"{Colors.RED}[ERROR]{Colors.WHITE} {e}")
+
+        finally:
+            connection.close()
+
+def handle_udp(server_ip, server_udp_port):
+    """Handles a UDP connection with a client."""
+
+    # Set up udp socket
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
+        udp_socket.bind((server_ip, server_udp_port))  # Bind to the specific IP and port
+
+        while True:
+            try:
+                data, client_address = udp_socket.recvfrom(1024)
+
+                # Reject and ignore short packets silently
+                if len(data) < 13:
+                    continue
+
+                # Unpack and validate the packet
+                cookie, msg_type, file_size = struct.unpack('!IBQ', data)
+                if cookie != MAGIC_COOKIE or msg_type != REQUEST_MESSAGE_TYPE:
+                    continue
+
+                print(f"{Colors.BLUE}[UDP PROCESSING]{Colors.WHITE} Sending {file_size} bytes to {client_address}")
+
+                # Sending data in segments
+                total_segments = file_size // 1024
+                for i in range(total_segments):
+                    payload = struct.pack('!IBQQ', MAGIC_COOKIE, PAYLOAD_MESSAGE_TYPE, total_segments, i) + b'X' * 1024
+                    udp_socket.sendto(payload, client_address)
+
+                print(f"{Colors.GREEN}[UDP TRANSFER]{Colors.WHITE} Completed transfer to {client_address}")
+            except Exception as e:
+                print(f"{Colors.RED}[ERROR]{Colors.WHITE} {e}")
 
 def get_server_ip():
     """Get the primary IP address of the server."""
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-        s.connect(("8.8.8.8", 80))  # Use an external address to determine the outbound interface
-        return s.getsockname()[0]
+        try:
+            s.connect(("8.8.8.8", 80))  # Use an external address to determine the outbound interface
+            return s.getsockname()[0]
+        except:
+            return "127.0.0.1"
 
 def start_server():
     """Starts the server application."""
+
+    #Set up server parameters
     server_ip = get_server_ip()
     server_udp_port = 13117
     server_tcp_port = 12345
 
+    #Announce setup
     print(f"{Colors.MAGENTA}[SERVER START]{Colors.WHITE} Server started")
-    print(f"{Colors.MAGENTA}[TCP]{Colors.WHITE} listening on {Colors.GREEN}{server_ip}:{Colors.RED}{server_tcp_port}{Colors.WHITE}")
-    print(f"{Colors.MAGENTA}[UDP]{Colors.WHITE} listening on {Colors.GREEN}{server_ip}:{Colors.RED}{server_udp_port}{Colors.WHITE}")
+    print(f"{Colors.MAGENTA}[TCP]{Colors.WHITE} listening on {Colors.GREEN}{server_ip}{Colors.WHITE}:{Colors.RED}{server_tcp_port}")
+    print(f"{Colors.MAGENTA}[UDP]{Colors.WHITE} listening on {Colors.GREEN}{server_ip}{Colors.WHITE}:{Colors.RED}{server_udp_port}")
 
     # Start UDP offer broadcast thread
-    threading.Thread(target=udp_offer_broadcast, args=(server_udp_port, server_tcp_port), daemon=True).start()
+    broadcast_thread = threading.Thread(target=udp_offer_broadcast, args=(server_udp_port, server_tcp_port), daemon=True)
+
+    # UDP server setup
+    udp_thread = threading.Thread(target=handle_udp, args=(server_ip, server_udp_port), daemon=True)
 
     # TCP server setup
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_socket:
-        tcp_socket.bind((server_ip, server_tcp_port))  # Bind to the specific IP and port
-        tcp_socket.listen()
+    tcp_thread = threading.Thread(target=handle_tcp, args=(server_ip, server_tcp_port), daemon=True)
 
-        # UDP server setup
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
-            udp_socket.bind((server_ip, server_udp_port))  # Bind to the specific IP and port
+    broadcast_thread.start()
+    udp_thread.start()
+    tcp_thread.start()
 
-            threading.Thread(target=handle_client_udp, args=(udp_socket,), daemon=True).start()
-
-            # Accept TCP connections
-            while True:
-                conn, addr = tcp_socket.accept()
-                threading.Thread(target=handle_client_tcp, args=(conn, addr), daemon=True).start()
+    broadcast_thread.join()
+    udp_thread.join()
+    tcp_thread.join()
 
 if __name__ == "__main__":
     start_server()
