@@ -38,19 +38,20 @@ def udp_offer_broadcast(server_udp_port, server_tcp_port):
 def handle_tcp(server_ip, server_tcp_port):
     """Handles a TCP connection with a client."""
 
-
+    #Set up a tcp packet
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_socket:
         tcp_socket.bind((server_ip, server_tcp_port))  # Bind to the specific IP and port
-        tcp_socket.listen()
-        # Accept TCP connections
+        tcp_socket.listen() # Put the socket into listening mode
+
+        # Wait for incoming tcp connections
         connection, address = tcp_socket.accept()
         try:
             print(f"{Colors.GREEN}[TCP CONNECTION]{Colors.WHITE} Connected to {address}")
-            file_size = int(connection.recv(1024).strip().decode('utf-8'))
+            file_size = int(connection.recv(1024).strip().decode('utf-8')) # Wait for arrival with a maximum size of 1024 bytes as well as decoding the data
             print(f"{Colors.CYAN}[TCP REQUEST]{Colors.WHITE} Client requested {file_size} bytes")
 
             # Sending the requested file size worth of data
-            connection.sendall(b'X' * file_size)
+            connection.sendall(b'X' * file_size) # Using sendall to transfer the data to ensure all the data will be sent
             print(f"{Colors.BLUE}[TCP TRANSFER]{Colors.WHITE} Sent {file_size} bytes to {address}")
 
         except Exception as e:
