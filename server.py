@@ -37,7 +37,6 @@ def udp_offer_broadcast(server_udp_port, server_tcp_port):
 
 def handle_tcp(server_ip, server_tcp_port):
     """Handles a TCP connection with a client."""
-
     #Set up a tcp packet
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_socket:
         tcp_socket.bind((server_ip, server_tcp_port))  # Bind to the specific IP and port
@@ -108,7 +107,7 @@ def start_server():
 
     #Set up server parameters
     server_ip = get_server_ip()
-    server_udp_port = 13117
+    server_udp_port = 30001
     server_tcp_port = 12345
 
     #Announce setup

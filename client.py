@@ -16,8 +16,6 @@ class Colors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
-def log(prefix, message, color_prefix=Colors.WHITE, color_message=Colors.WHITE):
-    print(f"{color_prefix}{prefix}{Colors.WHITE} {color_message}{message}{Colors.WHITE}")
 
 # Constants for the protocol
 MAGIC_COOKIE = 0xabcddcba
@@ -36,17 +34,17 @@ def listen_for_offers(running):
                 data, addr = udp_socket.recvfrom(1024)
                 handle_offer(data, addr, running)
     except Exception as e:
-        log(f"{Colors.RED}[ERROR] Error in listening for offers: {e}")
+        print(f"{Colors.RED}[ERROR] Error in listening for offers: {e}")
 
 def handle_offer(data, addr, running):
     try:
         magic_cookie, message_type, udp_port, tcp_port = struct.unpack('!IbHH', data[:9])
         if magic_cookie == MAGIC_COOKIE and message_type == MESSAGE_TYPE_OFFER:
             server_address = addr[0]
-            log(f"{Colors.CYAN}[UDP OFFER] {Colors.WHITE}Received offer from {server_address}")
+            print(f"{Colors.CYAN}[UDP OFFER] {Colors.WHITE}Received offer from {server_address}")
             run_speed_test(server_address, udp_port, tcp_port, running)
     except Exception as e:
-        log(f"{Colors.RED}[ERROR] Error in handling offer: {e}")
+        print(f"{Colors.RED}[ERROR] Error in handling offer: {e}")
 
 def run_speed_test(server_address, udp_port, tcp_port, running):
     file_size = int(input("Enter file size to download (bytes): "))
@@ -68,7 +66,7 @@ def run_speed_test(server_address, udp_port, tcp_port, running):
     for thread in threads:
         thread.join()
 
-    log(f"{Colors.GREEN}[COMPLETE] {Colors.WHITE}All transfers complete, listening to offer requests")
+    print(f"{Colors.GREEN}[COMPLETE] {Colors.WHITE}All transfers complete, listening to offer requests")
 
 def tcp_download(server_address, tcp_port, file_size, connection_id):
     try:
@@ -81,9 +79,9 @@ def tcp_download(server_address, tcp_port, file_size, connection_id):
             elapsed_time = (datetime.now() - start_time).total_seconds()
 
             speed = len(received_data) * 8 / elapsed_time
-            log(f"{Colors.YELLOW}[TCP #{connection_id}] {Colors.WHITE}Finished, total time: {elapsed_time:.2f} seconds, total speed: {speed:.2f} bits/second")
+            print(f"{Colors.YELLOW}[TCP #{connection_id}] {Colors.WHITE}Finished, total time: {elapsed_time:.2f} seconds, total speed: {speed:.2f} bits/second")
     except Exception as e:
-        log(f"[TCP #{connection_id}]", f"Error: {e}", Colors.RED, Colors.RED)
+        print(f"{Colors.RED}[TCP #{connection_id}] Error: {e}")
 
 def udp_download(server_address, udp_port, file_size, connection_id):
     try:
@@ -110,21 +108,22 @@ def udp_download(server_address, udp_port, file_size, connection_id):
             percentage_received = (received_packets / total_packets) * 100 if total_packets > 0 else 0
             speed = (received_packets * 1024 * 8) / elapsed_time
 
-            log(f"{Colors.CYAN}[UDP #{connection_id}] {Colors.WHITE}Finished, total time: {elapsed_time:.2f} seconds, total speed: {speed:.2f} bits/second, percentage received: {percentage_received:.2f}%")
+            print(f"{Colors.CYAN}[UDP #{connection_id}] {Colors.WHITE}Finished, total time: {elapsed_time:.2f} seconds, total speed: {speed:.2f} bits/second, percentage received: {percentage_received:.2f}%")
     except Exception as e:
-        log(f"{Colors.RED}[UDP #{connection_id}] Error: {e}")
+        print(f"{Colors.RED}[UDP #{connection_id}] Error: {e}")
 
 
 if __name__ == "__main__":
     running = True
-    log(f"{Colors.GREEN}[CLIENT START] {Colors.WHITE}Listening for offer requests...")
+    print(f"{Colors.GREEN}[CLIENT START] {Colors.WHITE}Listening for offer requests...")
     listen_thread = threading.Thread(target=listen_for_offers, args=(running,))
     listen_thread.start()
+    listen_thread.join()
 
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        log(f"{Colors.RED}[SHUTDOWN] {Colors.WHITE}Shutting down client...")
+        print(f"{Colors.RED}[SHUTDOWN] {Colors.WHITE}Shutting down client...")
         running = False
         listen_thread.join()
