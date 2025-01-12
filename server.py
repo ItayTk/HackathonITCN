@@ -4,7 +4,6 @@ import struct
 import time
 from tqdm import tqdm
 
-
 # ANSI color codes
 class Colors:
     MAGENTA = '\033[95m'
