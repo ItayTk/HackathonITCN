@@ -3,112 +3,95 @@ import struct
 import threading
 import time
 
+# ANSI color codes
+class Colors:
+    MAGENTA = '\033[95m'
+    BLUE = '\033[94m'
+    CYAN = '\033[96m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    RED = '\033[91m'
+    WHITE = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
 # Constants
-MAGIC_COOKIE = 0xabcddcba  # Unique identifier for packets to ensure validity
-OFFER_MESSAGE_TYPE = 0x2  # Message type for server offers
-REQUEST_MESSAGE_TYPE = 0x3  # Message type for client requests
+MAGIC_COOKIE = 0xabcddcba
+OFFER_MESSAGE_TYPE = 0x2
+REQUEST_MESSAGE_TYPE = 0x3
+PAYLOAD_MESSAGE_TYPE = 0x4
 
-# ANSI Colors for output formatting
-RESET = "\033[0m"
-YELLOW = "\033[33m"
-BLUE = "\033[34m"
-RED = "\033[31m"
+def listen_for_offers(udp_port):
+    """Listens for server UDP offers."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
+        udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        udp_socket.bind(("", udp_port))
 
-class SpeedTestClient:
-    def __init__(self, udp_port):
-        self.udp_port = udp_port  # Port to listen for UDP offers
-        self.server_info = None  # Store server details
-        self.user_ready = threading.Event()  # Synchronization flag to ensure user input completion
+        print(f"{Colors.GREEN}[CLIENT]{Colors.WHITE} Listening for offers on UDP port {udp_port}...")
 
-    def start(self):
-        # Start the thread to listen for server offers and prompt user input
-        threading.Thread(target=self.listen_for_offers, daemon=True).start()
-        self.user_input()
-        if self.server_info:
-            self.perform_speed_test()
+        while True:
+            data, server_address = udp_socket.recvfrom(1024)
+            try:
+                cookie, msg_type, server_udp_port, server_tcp_port = struct.unpack('!IBHH', data)
+                if cookie == MAGIC_COOKIE and msg_type == OFFER_MESSAGE_TYPE:
+                    print(f"{Colors.CYAN}[OFFER RECEIVED]{Colors.WHITE} From {server_address}: UDP {server_udp_port}, TCP {server_tcp_port}")
+                    return server_address[0], server_tcp_port
+            except Exception as e:
+                print(f"{Colors.RED}[ERROR]{Colors.WHITE} Invalid offer packet: {e}")
 
-    def listen_for_offers(self):
-        # Listen for server offers via UDP
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
-            udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            udp_socket.bind(('', self.udp_port))
 
+def tcp_transfer(server_ip, server_tcp_port, file_size):
+    """Handles TCP file transfer."""
+    start_time = time.time()
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_socket:
+        tcp_socket.connect((server_ip, server_tcp_port))
+        tcp_socket.sendall(f"{file_size}\n".encode('utf-8'))
+
+        data_received = 0
+        while data_received < file_size:
+            data = tcp_socket.recv(4096)
+            if not data:
+                break
+            data_received += len(data)
+
+    total_time = time.time() - start_time
+    speed = (data_received * 8) / total_time  # bits per second
+    print(f"{Colors.BLUE}[TCP FINISHED]{Colors.WHITE} Time: {total_time:.2f}s, Speed: {speed:.2f} bps")
+
+def udp_transfer(server_ip, server_udp_port, file_size):
+    """Handles UDP file transfer."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
+        udp_socket.settimeout(1)
+        request_packet = struct.pack('!IBQ', MAGIC_COOKIE, REQUEST_MESSAGE_TYPE, file_size)
+        udp_socket.sendto(request_packet, (server_ip, server_udp_port))
+
+        data_received = 0
+        packet_count = 0
+
+        try:
             while True:
-                data, addr = udp_socket.recvfrom(1024)  # Receive UDP packet
-                magic_cookie, msg_type, server_udp_port, server_tcp_port = struct.unpack('!IBHH', data[:9])
+                data, _ = udp_socket.recvfrom(2048)
+                packet_count += 1
+                data_received += len(data) - 20  # Subtract header size
+        except socket.timeout:
+            pass
 
-                # Validate packet and display offer if user is ready
-                if magic_cookie == MAGIC_COOKIE and msg_type == OFFER_MESSAGE_TYPE:
-                    if self.user_ready.is_set():
-                        print(f"{YELLOW}Received offer from {addr[0]}: UDP port {server_udp_port}, TCP port {server_tcp_port}{RESET}")
-                        self.server_info = (addr[0], server_udp_port, server_tcp_port)
+        print(f"{Colors.GREEN}[UDP FINISHED]{Colors.WHITE} Packets: {packet_count}, Bytes: {data_received}")
 
-    def user_input(self):
-        # Prompt the user for test parameters
-        file_size = int(input("Enter file size (bytes): "))
-        tcp_connections = int(input("Enter number of TCP connections: "))
-        udp_connections = int(input("Enter number of UDP connections: "))
+def main():
+    """Main client function."""
+    udp_port = 13117
+    server_ip, server_tcp_port = listen_for_offers(udp_port)
 
-        print(f"{BLUE}File size: {file_size}, TCP connections: {tcp_connections}, UDP connections: {udp_connections}{RESET}")
-        self.file_size = file_size
-        self.tcp_connections = tcp_connections
-        self.udp_connections = udp_connections
-        self.user_ready.set()  # Allow processing of server offers
+    file_size = int(input("Enter file size (bytes): "))
+    protocol = input("Choose protocol (tcp/udp): ").strip().lower()
 
-    def perform_speed_test(self):
-        # Perform speed tests using TCP and UDP
-        server_ip, server_udp_port, server_tcp_port = self.server_info
-
-        # TCP Speed Test
-        for i in range(self.tcp_connections):
-            threading.Thread(target=self.tcp_speed_test, args=(server_ip, server_tcp_port, i), daemon=True).start()
-
-        # UDP Speed Test
-        for i in range(self.udp_connections):
-            threading.Thread(target=self.udp_speed_test, args=(server_ip, server_udp_port, i), daemon=True).start()
-
-    def tcp_speed_test(self, server_ip, server_tcp_port, connection_id):
-        # Perform a TCP file transfer
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_socket:
-                tcp_socket.connect((server_ip, server_tcp_port))
-                tcp_socket.sendall(f"{self.file_size}\n".encode())
-                start_time = time.time()
-                received_data = tcp_socket.recv(self.file_size)
-                end_time = time.time()
-
-            transfer_time = end_time - start_time
-            print(f"{GREEN}TCP transfer #{connection_id} completed in {transfer_time:.2f} seconds{RESET}")
-        except Exception as e:
-            print(f"{RED}TCP error on connection #{connection_id}: {e}{RESET}")
-
-    def udp_speed_test(self, server_ip, server_udp_port, connection_id):
-        # Perform a UDP file transfer
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
-                request_packet = struct.pack('!IBQ', MAGIC_COOKIE, REQUEST_MESSAGE_TYPE, self.file_size)
-                udp_socket.sendto(request_packet, (server_ip, server_udp_port))
-                start_time = time.time()
-
-                received_segments = 0
-                while True:
-                    data, _ = udp_socket.recvfrom(1024)
-                    magic_cookie, msg_type, total_segments, current_segment = struct.unpack('!IBQQ', data[:21])
-                    if magic_cookie == MAGIC_COOKIE and msg_type == PAYLOAD_MESSAGE_TYPE:
-                        received_segments += 1
-                    if received_segments >= total_segments:
-                        break
-
-                end_time = time.time()
-
-            transfer_time = end_time - start_time
-            print(f"{GREEN}UDP transfer #{connection_id} completed in {transfer_time:.2f} seconds{RESET}")
-        except Exception as e:
-            print(f"{RED}UDP error on connection #{connection_id}: {e}{RESET}")
+    if protocol == "tcp":
+        tcp_transfer(server_ip, server_tcp_port, file_size)
+    elif protocol == "udp":
+        udp_transfer(server_ip, udp_port, file_size)
+    else:
+        print(f"{Colors.YELLOW}[WARNING]{Colors.WHITE} Invalid protocol. Exiting.")
 
 if __name__ == "__main__":
-    udp_port = int(input("Enter UDP port to listen on: "))
-    client = SpeedTestClient(udp_port)
-    client.start()
-    while True:
-        time.sleep(1)  # Keep the main thread alive
+    main()

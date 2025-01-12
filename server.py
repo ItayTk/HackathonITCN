@@ -1,105 +1,115 @@
 import socket
-import struct
 import threading
+import struct
 import time
 
+# ANSI color codes
+class Colors:
+    MAGENTA = '\033[95m'
+    BLUE = '\033[94m'
+    CYAN = '\033[96m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    RED = '\033[91m'
+    WHITE = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
 # Constants
-MAGIC_COOKIE = 0xabcddcba  # Unique identifier for packets to ensure validity
-OFFER_MESSAGE_TYPE = 0x2  # Message type for server offers
-REQUEST_MESSAGE_TYPE = 0x3  # Message type for client requests
-PAYLOAD_MESSAGE_TYPE = 0x4  # Message type for data payloads
+MAGIC_COOKIE = 0xabcddcba
+OFFER_MESSAGE_TYPE = 0x2
+REQUEST_MESSAGE_TYPE = 0x3
+PAYLOAD_MESSAGE_TYPE = 0x4
 
-# ANSI Colors for output formatting
-RESET = "\033[0m"
-GREEN = "\033[32m"
-CYAN = "\033[36m"
+def udp_offer_broadcast(server_udp_port, server_tcp_port):
+    """Broadcasts UDP offers to clients."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
+        udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        offer_message = struct.pack('!IBHH', MAGIC_COOKIE, OFFER_MESSAGE_TYPE, server_udp_port, server_tcp_port)
 
-class SpeedTestServer:
-    def __init__(self, udp_port, tcp_port):
-        self.udp_port = udp_port  # Port for broadcasting UDP offers
-        self.tcp_port = tcp_port  # Port for handling TCP connections
-        self.running = True  # Flag to keep the server running
+        while True:
+            udp_socket.sendto(offer_message, ('<broadcast>', server_udp_port))
+            print(f"{Colors.CYAN}[UDP OFFER]{Colors.WHITE} Broadcast sent on UDP port {Colors.RED}{server_udp_port}")
+            time.sleep(1)
 
-    def start(self):
-        # Get the server's IP address to display on startup
-        server_ip = self.get_server_ip()
-        print(f"{CYAN}Server started, listening on IP address {server_ip}{RESET}")
-        # Start the thread to broadcast UDP offers and the TCP/UDP server
-        threading.Thread(target=self.broadcast_offers, daemon=True).start()
-        threading.Thread(target=self.start_udp_server, daemon=True).start()
-        self.start_tcp_server()
+def handle_client_tcp(connection, address):
+    """Handles a TCP connection with a client."""
+    try:
+        print(f"{Colors.GREEN}[TCP CONNECTION]{Colors.WHITE} Connected to {address}")
+        file_size = int(connection.recv(1024).strip().decode('utf-8'))
+        print(f"{Colors.CYAN}[TCP REQUEST]{Colors.WHITE} Client requested {file_size} bytes")
 
-    def get_server_ip(self):
-        # Determine the server's IP address dynamically
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            try:
-                s.connect(("8.8.8.8", 80))
-                return s.getsockname()[0]
-            except Exception:
-                return "127.0.0.1"  # Fallback to localhost if unable to determine
+        # Sending the requested file size worth of data
+        connection.sendall(b'X' * file_size)
+        print(f"{Colors.BLUE}[TCP TRANSFER]{Colors.WHITE} Sent {file_size} bytes to {address}")
 
-    def broadcast_offers(self):
-        # Broadcast UDP packets to announce the server's presence
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
-            udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            offer_packet = struct.pack('!IBHH', MAGIC_COOKIE, OFFER_MESSAGE_TYPE, self.udp_port, self.tcp_port)
+    except Exception as e:
+        print(f"{Colors.RED}[ERROR]{Colors.WHITE} {e}")
 
-            while self.running:
-                udp_socket.sendto(offer_packet, ('<broadcast>', self.udp_port))
-                print(f"{GREEN}Broadcasting offer on UDP port {self.udp_port}{RESET}")
-                time.sleep(1)  # Wait 1 second between broadcasts
+    finally:
+        connection.close()
 
-    def start_tcp_server(self):
-        # Start a TCP server to handle file size requests
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_socket:
-            tcp_socket.bind(('', self.tcp_port))
-            tcp_socket.listen()
-            print(f"{CYAN}Server started, listening on TCP port {self.tcp_port}{RESET}")
-
-            while self.running:
-                client_socket, address = tcp_socket.accept()
-                print(f"{GREEN}Accepted connection from {address}{RESET}")
-                threading.Thread(target=self.handle_tcp_client, args=(client_socket,), daemon=True).start()
-
-    def handle_tcp_client(self, client_socket):
-        # Handle a single TCP client request
+def handle_client_udp(server_socket):
+    """Handles a UDP connection with a client."""
+    while True:
         try:
-            with client_socket:
-                data = client_socket.recv(1024).decode()  # Receive file size from client
-                file_size = int(data.strip())
-                print(f"{CYAN}Received TCP file size request: {file_size} bytes{RESET}")
-                client_socket.sendall(b"\x00" * file_size)  # Send requested amount of data
-                print(f"{GREEN}Sent {file_size} bytes to client via TCP{RESET}")
+            data, client_address = server_socket.recvfrom(1024)
+
+            # Reject and ignore short packets silently
+            if len(data) < 13:
+                continue
+
+            # Unpack and validate the packet
+            cookie, msg_type, file_size = struct.unpack('!IBQ', data)
+            if cookie != MAGIC_COOKIE or msg_type != REQUEST_MESSAGE_TYPE:
+                continue
+
+            print(f"{Colors.BLUE}[UDP PROCESSING]{Colors.WHITE} Sending {file_size} bytes to {client_address}")
+
+            # Sending data in segments
+            total_segments = file_size // 1024
+            for i in range(total_segments):
+                payload = struct.pack('!IBQQ', MAGIC_COOKIE, PAYLOAD_MESSAGE_TYPE, total_segments, i) + b'X' * 1024
+                server_socket.sendto(payload, client_address)
+
+            print(f"{Colors.GREEN}[UDP TRANSFER]{Colors.WHITE} Completed transfer to {client_address}")
         except Exception as e:
-            print(f"Error handling TCP client: {e}")
+            print(f"{Colors.RED}[ERROR]{Colors.WHITE} {e}")
 
-    def start_udp_server(self):
-        # Start a UDP server to handle client requests
+def get_server_ip():
+    """Get the primary IP address of the server."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.connect(("8.8.8.8", 80))  # Use an external address to determine the outbound interface
+        return s.getsockname()[0]
+
+def start_server():
+    """Starts the server application."""
+    server_ip = get_server_ip()
+    server_udp_port = 13117
+    server_tcp_port = 12345
+
+    print(f"{Colors.MAGENTA}[SERVER START]{Colors.WHITE} Server started")
+    print(f"{Colors.MAGENTA}[TCP]{Colors.WHITE} listening on {Colors.GREEN}{server_ip}:{Colors.RED}{server_tcp_port}{Colors.WHITE}")
+    print(f"{Colors.MAGENTA}[UDP]{Colors.WHITE} listening on {Colors.GREEN}{server_ip}:{Colors.RED}{server_udp_port}{Colors.WHITE}")
+
+    # Start UDP offer broadcast thread
+    threading.Thread(target=udp_offer_broadcast, args=(server_udp_port, server_tcp_port), daemon=True).start()
+
+    # TCP server setup
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_socket:
+        tcp_socket.bind((server_ip, server_tcp_port))  # Bind to the specific IP and port
+        tcp_socket.listen()
+
+        # UDP server setup
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
-            udp_socket.bind(('', self.udp_port))
-            print(f"{CYAN}Server started, listening on UDP port {self.udp_port}{RESET}")
+            udp_socket.bind((server_ip, server_udp_port))  # Bind to the specific IP and port
 
-            while self.running:
-                data, addr = udp_socket.recvfrom(1024)
-                magic_cookie, msg_type, file_size = struct.unpack('!IBQ', data)
+            threading.Thread(target=handle_client_udp, args=(udp_socket,), daemon=True).start()
 
-                if magic_cookie == MAGIC_COOKIE and msg_type == REQUEST_MESSAGE_TYPE:
-                    print(f"{CYAN}Received UDP file size request: {file_size} bytes from {addr}{RESET}")
-                    threading.Thread(target=self.handle_udp_client, args=(udp_socket, addr, file_size), daemon=True).start()
-
-    def handle_udp_client(self, udp_socket, addr, file_size):
-        # Send data in UDP packets to the client
-        total_segments = (file_size + 1023) // 1024  # Calculate total number of segments
-        for segment in range(total_segments):
-            payload = struct.pack('!IBQQ', MAGIC_COOKIE, PAYLOAD_MESSAGE_TYPE, total_segments, segment) + b"\x00" * min(1024, file_size)
-            udp_socket.sendto(payload, addr)
-            file_size -= 1024
-        print(f"{GREEN}Sent {total_segments} segments to {addr} via UDP{RESET}")
+            # Accept TCP connections
+            while True:
+                conn, addr = tcp_socket.accept()
+                threading.Thread(target=handle_client_tcp, args=(conn, addr), daemon=True).start()
 
 if __name__ == "__main__":
-    udp_port = int(input("Enter UDP port: "))
-    tcp_port = int(input("Enter TCP port: "))
-    server = SpeedTestServer(udp_port, tcp_port)
-    server.start()
-    while True:
-        time.sleep(1)  # Keep the main thread alive
+    start_server()
