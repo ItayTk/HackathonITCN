@@ -2,8 +2,9 @@ import socket
 import struct
 import threading
 import time
+from datetime import datetime
 
-# ANSI color codes
+# ANSI Color Definitions
 class Colors:
     MAGENTA = '\033[95m'
     BLUE = '\033[94m'
@@ -15,83 +16,117 @@ class Colors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
-# Constants
+def log(message, color=Colors.WHITE):
+    print(f"{color}{message}{Colors.WHITE}")
+
+# Constants for the protocol
 MAGIC_COOKIE = 0xabcddcba
-OFFER_MESSAGE_TYPE = 0x2
-REQUEST_MESSAGE_TYPE = 0x3
-PAYLOAD_MESSAGE_TYPE = 0x4
+MESSAGE_TYPE_OFFER = 0x2
+MESSAGE_TYPE_REQUEST = 0x3
+MESSAGE_TYPE_PAYLOAD = 0x4
+UDP_PORT = 13117  # Listening port for UDP broadcasts
 
-def listen_for_offers(udp_port):
-    """Listens for server UDP offers."""
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
-        udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        udp_socket.bind(("", udp_port))
+def listen_for_offers(running):
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
+            udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            udp_socket.bind(('', UDP_PORT))
 
-        print(f"{Colors.GREEN}[CLIENT]{Colors.WHITE} Listening for offers on UDP port {udp_port}...")
+            while running:
+                data, addr = udp_socket.recvfrom(1024)
+                handle_offer(data, addr, running)
+    except Exception as e:
+        log(f"Error in listening for offers: {e}", Colors.RED)
 
-        while True:
-            data, server_address = udp_socket.recvfrom(1024)
-            try:
-                cookie, msg_type, server_udp_port, server_tcp_port = struct.unpack('!IBHH', data)
-                if cookie == MAGIC_COOKIE and msg_type == OFFER_MESSAGE_TYPE:
-                    print(f"{Colors.CYAN}[OFFER RECEIVED]{Colors.WHITE} From {server_address}: UDP {server_udp_port}, TCP {server_tcp_port}")
-                    return server_address[0], server_tcp_port
-            except Exception as e:
-                print(f"{Colors.RED}[ERROR]{Colors.WHITE} Invalid offer packet: {e}")
+def handle_offer(data, addr, running):
+    try:
+        magic_cookie, message_type, udp_port, tcp_port = struct.unpack('!IbHH', data[:9])
+        if magic_cookie == MAGIC_COOKIE and message_type == MESSAGE_TYPE_OFFER:
+            server_address = addr[0]
+            log(f"Received offer from {server_address}", Colors.CYAN)
+            run_speed_test(server_address, udp_port, tcp_port, running)
+    except Exception as e:
+        log(f"Error in handling offer: {e}", Colors.RED)
 
+def run_speed_test(server_address, udp_port, tcp_port, running):
+    file_size = int(input("Enter file size to download (bytes): "))
+    tcp_connections = int(input("Enter number of TCP connections: "))
+    udp_connections = int(input("Enter number of UDP connections: "))
 
-def tcp_transfer(server_ip, server_tcp_port, file_size):
-    """Handles TCP file transfer."""
-    start_time = time.time()
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_socket:
-        tcp_socket.connect((server_ip, server_tcp_port))
-        tcp_socket.sendall(f"{file_size}\n".encode('utf-8'))
+    threads = []
 
-        data_received = 0
-        while data_received < file_size:
-            data = tcp_socket.recv(4096)
-            if not data:
-                break
-            data_received += len(data)
+    for i in range(tcp_connections):
+        thread = threading.Thread(target=tcp_download, args=(server_address, tcp_port, file_size, i + 1))
+        threads.append(thread)
+        thread.start()
 
-    total_time = time.time() - start_time
-    speed = (data_received * 8) / total_time  # bits per second
-    print(f"{Colors.BLUE}[TCP FINISHED]{Colors.WHITE} Time: {total_time:.2f}s, Speed: {speed:.2f} bps")
+    for i in range(udp_connections):
+        thread = threading.Thread(target=udp_download, args=(server_address, udp_port, file_size, i + 1))
+        threads.append(thread)
+        thread.start()
 
-def udp_transfer(server_ip, server_udp_port, file_size):
-    """Handles UDP file transfer."""
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
-        udp_socket.settimeout(1)
-        request_packet = struct.pack('!IBQ', MAGIC_COOKIE, REQUEST_MESSAGE_TYPE, file_size)
-        udp_socket.sendto(request_packet, (server_ip, server_udp_port))
+    for thread in threads:
+        thread.join()
 
-        data_received = 0
-        packet_count = 0
+    log("All transfers complete, listening to offer requests", Colors.GREEN)
 
-        try:
+def tcp_download(server_address, tcp_port, file_size, connection_id):
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_socket:
+            tcp_socket.connect((server_address, tcp_port))
+            tcp_socket.sendall(f"{file_size}\n".encode('utf-8'))
+
+            start_time = datetime.now()
+            received_data = tcp_socket.recv(file_size)
+            elapsed_time = (datetime.now() - start_time).total_seconds()
+
+            speed = len(received_data) * 8 / elapsed_time
+            log(f"TCP transfer #{connection_id} finished, total time: {elapsed_time:.2f} seconds, total speed: {speed:.2f} bits/second", Colors.YELLOW)
+    except Exception as e:
+        log(f"TCP transfer #{connection_id} error: {e}", Colors.RED)
+
+def udp_download(server_address, udp_port, file_size, connection_id):
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
+            request_packet = struct.pack('!IbQ', MAGIC_COOKIE, MESSAGE_TYPE_REQUEST, file_size)
+            udp_socket.sendto(request_packet, (server_address, udp_port))
+
+            start_time = datetime.now()
+            received_packets = 0
+            total_packets = 0
+
             while True:
-                data, _ = udp_socket.recvfrom(2048)
-                packet_count += 1
-                data_received += len(data) - 20  # Subtract header size
-        except socket.timeout:
-            pass
+                udp_socket.settimeout(1.0)
+                try:
+                    data, _ = udp_socket.recvfrom(1024)
+                    magic_cookie, message_type, total_segments, current_segment = struct.unpack('!IbQQ', data[:21])
+                    if magic_cookie == MAGIC_COOKIE and message_type == MESSAGE_TYPE_PAYLOAD:
+                        total_packets = total_segments
+                        received_packets += 1
+                except socket.timeout:
+                    break
 
-        print(f"{Colors.GREEN}[UDP FINISHED]{Colors.WHITE} Packets: {packet_count}, Bytes: {data_received}")
+            elapsed_time = (datetime.now() - start_time).total_seconds()
+            percentage_received = (received_packets / total_packets) * 100 if total_packets > 0 else 0
+            speed = (received_packets * 1024 * 8) / elapsed_time
+
+            log(f"UDP transfer #{connection_id} finished, total time: {elapsed_time:.2f} seconds, total speed: {speed:.2f} bits/second, percentage of packets received successfully: {percentage_received:.2f}%", Colors.CYAN)
+    except Exception as e:
+        log(f"UDP transfer #{connection_id} error: {e}", Colors.RED)
 
 def main():
-    """Main client function."""
-    udp_port = 13117
-    server_ip, server_tcp_port = listen_for_offers(udp_port)
+    running = True
+    log("Client started, listening for offer requests...", Colors.GREEN)
+    listen_thread = threading.Thread(target=listen_for_offers, args=(running,))
+    listen_thread.start()
 
-    file_size = int(input("Enter file size (bytes): "))
-    protocol = input("Choose protocol (tcp/udp): ").strip().lower()
-
-    if protocol == "tcp":
-        tcp_transfer(server_ip, server_tcp_port, file_size)
-    elif protocol == "udp":
-        udp_transfer(server_ip, udp_port, file_size)
-    else:
-        print(f"{Colors.YELLOW}[WARNING]{Colors.WHITE} Invalid protocol. Exiting.")
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        log("Shutting down client...", Colors.RED)
+        running = False
+        listen_thread.join()
 
 if __name__ == "__main__":
     main()
