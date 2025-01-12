@@ -3,6 +3,8 @@ import threading
 import struct
 import time
 from tqdm import tqdm
+import netifaces
+
 
 # ANSI color codes
 class Colors:
@@ -22,7 +24,27 @@ OFFER_MESSAGE_TYPE = 0x2
 REQUEST_MESSAGE_TYPE = 0x3
 PAYLOAD_MESSAGE_TYPE = 0x4
 
-def udp_offer_broadcast(server_udp_port, server_tcp_port):
+def get_server_ip():
+    """Get the primary IP address of the server."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        try:
+            s.connect(("8.8.8.8", 80))  # Use an external address to determine the outbound interface
+            return s.getsockname()[0] # PC IP that was used in the connection
+        except:
+            return "127.0.0.1" # Local host address in case we couldn't connect or don't have an IP
+
+def get_server_broadcast_ip(server_ip):
+    """Get the netmask that belongs to the server ip."""
+    if str(server_ip) == "127.0.0.1":
+        return "127.255.255.255"
+    for interface in netifaces.interfaces():
+        addrs = netifaces.ifaddresses(interface)
+        if netifaces.AF_INET in addrs:
+            ipv4_info = addrs[netifaces.AF_INET][0]
+            if str(ipv4_info['addr']) == str(server_ip):
+                return str(ipv4_info['broadcast'])
+
+def udp_offer_broadcast(server_udp_port, server_tcp_port, server_broadcast_ip):
     """Broadcasts UDP offers to clients."""
 
     #Set up an udp packet acts as a broadcast
@@ -31,9 +53,44 @@ def udp_offer_broadcast(server_udp_port, server_tcp_port):
         offer_message = struct.pack('!IBHH', MAGIC_COOKIE, OFFER_MESSAGE_TYPE, server_udp_port, server_tcp_port) # !(Big endian) I(4) B(1) H(2) H(2) is the format and sizes in bytes of the components of the packet
 
         while True: # Repeated sending of the broadcast to the network
-            udp_socket.sendto(offer_message, ('<broadcast>', server_udp_port))
+            udp_socket.sendto(offer_message, (server_broadcast_ip, server_udp_port))
             print(f"{Colors.CYAN}[UDP OFFER]{Colors.WHITE} Broadcast sent on UDP port {Colors.RED}{server_udp_port}")
             time.sleep(1)
+
+def handle_udp(server_ip, server_udp_port):
+    """Handles a UDP connection with a client."""
+
+    # Set up udp socket
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
+        udp_socket.bind((server_ip, server_udp_port))  # Bind to the specific IP and port
+
+        while True:
+            try:
+                data, client_address = udp_socket.recvfrom(1024) # Wait for arrival with a maximum size of 1024 bytes
+
+                # Silently reject and ignore packets that are too short
+                if len(data) < 13:
+                    continue
+
+                # Unpack and validate the packet
+                cookie, msg_type, file_size = struct.unpack('!IBQ', data)# !(Big Endian) I(4) B(1) Q(8) is the format and sizes in bytes of the components of the packet
+                if cookie != MAGIC_COOKIE or msg_type != REQUEST_MESSAGE_TYPE: #Check that the message fields match ours
+                    continue
+
+                print(f"{Colors.BLUE}[UDP PROCESSING]{Colors.WHITE} Sending {file_size} bytes to {client_address}")
+
+                # Sending data in segments
+                data_size = file_size - 13
+                total_segments = data_size // 1024 if data_size % 1024 != 0 else data_size // 1024 + 1
+                bytes_to_send = data_size
+                for i in tqdm(range(total_segments)):
+                    payload = struct.pack('!IBQQ', MAGIC_COOKIE, PAYLOAD_MESSAGE_TYPE, total_segments, i) + b'X' * min(1024, bytes_to_send)# !(Big Endian) I(4) B(1) Q(8) Q(8) is the format and sizes in bytes of the component of the packet
+                    bytes_to_send -= 1024
+                    udp_socket.sendto(payload, client_address)
+
+                print(f"{Colors.GREEN}[UDP TRANSFER]{Colors.WHITE} Completed transfer to {client_address}")
+            except Exception as e:
+                print(f"{Colors.RED}[ERROR]{Colors.WHITE} {e}")
 
 def handle_tcp(server_ip, server_tcp_port):
     """Handles a TCP connection with a client."""
@@ -59,54 +116,14 @@ def handle_tcp(server_ip, server_tcp_port):
         finally:
             connection.close()
 
-def handle_udp(server_ip, server_udp_port):
-    """Handles a UDP connection with a client."""
 
-    # Set up udp socket
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
-        udp_socket.bind((server_ip, server_udp_port))  # Bind to the specific IP and port
-
-        while True:
-            try:
-                data, client_address = udp_socket.recvfrom(1024) # Wait for arrival with a maximum size of 1024 bytes
-
-                # Silently reject and ignore packets that are too short
-                if len(data) < 13:
-                    continue
-
-                # Unpack and validate the packet
-                cookie, msg_type, file_size = struct.unpack('!IBQ', data)# !(Big Endian) I(4) B(1) Q(8) is the format and sizes in bytes of the components of the packet
-                if cookie != MAGIC_COOKIE or msg_type != REQUEST_MESSAGE_TYPE: #Check that the message fields match ours
-                    continue
-
-                print(f"{Colors.BLUE}[UDP PROCESSING]{Colors.WHITE} Sending {file_size} bytes to {client_address}")
-
-                # Sending data in segments
-                total_segments = file_size // 1024 if file_size % 1024 != 0 else file_size // 1024 + 1
-                bytes_to_send = file_size
-                for i in tqdm(range(total_segments)):
-                    payload = struct.pack('!IBQQ', MAGIC_COOKIE, PAYLOAD_MESSAGE_TYPE, total_segments, i) + b'X' * min(1024, bytes_to_send)# !(Big Endian) I(4) B(1) Q(8) Q(8) is the format and sizes in bytes of the component of the packet
-                    bytes_to_send -= 1024
-                    udp_socket.sendto(payload, client_address)
-
-                print(f"{Colors.GREEN}[UDP TRANSFER]{Colors.WHITE} Completed transfer to {client_address}")
-            except Exception as e:
-                print(f"{Colors.RED}[ERROR]{Colors.WHITE} {e}")
-
-def get_server_ip():
-    """Get the primary IP address of the server."""
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-        try:
-            s.connect(("8.8.8.8", 80))  # Use an external address to determine the outbound interface
-            return s.getsockname()[0] # PC IP that was used in the connection
-        except:
-            return "127.0.0.1" # Local host address in case we couldn't connect or don't have an IP
 
 def start_server():
     """Starts the server application."""
 
     #Set up server parameters
     server_ip = get_server_ip()
+    server_broadcast_ip = get_server_broadcast_ip(server_ip)
     server_udp_port = 30001
     server_tcp_port = 12345
 
@@ -116,7 +133,7 @@ def start_server():
     print(f"{Colors.MAGENTA}[UDP]{Colors.WHITE} listening on {Colors.GREEN}{server_ip}{Colors.WHITE}:{Colors.RED}{server_udp_port}")
 
     # Start UDP offer broadcast thread
-    broadcast_thread = threading.Thread(target=udp_offer_broadcast, args=(server_udp_port, server_tcp_port), daemon=True)
+    broadcast_thread = threading.Thread(target=udp_offer_broadcast, args=(server_udp_port, server_tcp_port,server_broadcast_ip), daemon=True)
 
     # UDP server setup
     udp_thread = threading.Thread(target=handle_udp, args=(server_ip, server_udp_port), daemon=True)
