@@ -2,7 +2,7 @@ import socket
 import threading
 import struct
 import time
-from warnings import catch_warnings
+from tqdm import tqdm
 
 
 # ANSI color codes
@@ -25,11 +25,13 @@ PAYLOAD_MESSAGE_TYPE = 0x4
 
 def udp_offer_broadcast(server_udp_port, server_tcp_port):
     """Broadcasts UDP offers to clients."""
+
+    #Set up an udp packet acts as a broadcast
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
         udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        offer_message = struct.pack('!IBHH', MAGIC_COOKIE, OFFER_MESSAGE_TYPE, server_udp_port, server_tcp_port)
+        offer_message = struct.pack('!IBHH', MAGIC_COOKIE, OFFER_MESSAGE_TYPE, server_udp_port, server_tcp_port) # !(Big endian) I(4) B(1) H(2) H(2) is the format and sizes in bytes of the components of the packet
 
-        while True:
+        while True: # Repeated sending of the broadcast to the network
             udp_socket.sendto(offer_message, ('<broadcast>', server_udp_port))
             print(f"{Colors.CYAN}[UDP OFFER]{Colors.WHITE} Broadcast sent on UDP port {Colors.RED}{server_udp_port}")
             time.sleep(1)
@@ -67,23 +69,25 @@ def handle_udp(server_ip, server_udp_port):
 
         while True:
             try:
-                data, client_address = udp_socket.recvfrom(1024)
+                data, client_address = udp_socket.recvfrom(1024) # Wait for arrival with a maximum size of 1024 bytes
 
-                # Reject and ignore short packets silently
+                # Silently reject and ignore packets that are too short
                 if len(data) < 13:
                     continue
 
                 # Unpack and validate the packet
-                cookie, msg_type, file_size = struct.unpack('!IBQ', data)
-                if cookie != MAGIC_COOKIE or msg_type != REQUEST_MESSAGE_TYPE:
+                cookie, msg_type, file_size = struct.unpack('!IBQ', data)# !(Big Endian) I(4) B(1) Q(8) is the format and sizes in bytes of the components of the packet
+                if cookie != MAGIC_COOKIE or msg_type != REQUEST_MESSAGE_TYPE: #Check that the message fields match ours
                     continue
 
                 print(f"{Colors.BLUE}[UDP PROCESSING]{Colors.WHITE} Sending {file_size} bytes to {client_address}")
 
                 # Sending data in segments
-                total_segments = file_size // 1024
-                for i in range(total_segments):
-                    payload = struct.pack('!IBQQ', MAGIC_COOKIE, PAYLOAD_MESSAGE_TYPE, total_segments, i) + b'X' * 1024
+                total_segments = file_size // 1024 if file_size % 1024 != 0 else file_size // 1024 + 1
+                bytes_to_send = file_size
+                for i in tqdm(range(total_segments)):
+                    payload = struct.pack('!IBQQ', MAGIC_COOKIE, PAYLOAD_MESSAGE_TYPE, total_segments, i) + b'X' * min(1024, bytes_to_send)# !(Big Endian) I(4) B(1) Q(8) Q(8) is the format and sizes in bytes of the component of the packet
+                    bytes_to_send -= 1024
                     udp_socket.sendto(payload, client_address)
 
                 print(f"{Colors.GREEN}[UDP TRANSFER]{Colors.WHITE} Completed transfer to {client_address}")
@@ -95,9 +99,9 @@ def get_server_ip():
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
         try:
             s.connect(("8.8.8.8", 80))  # Use an external address to determine the outbound interface
-            return s.getsockname()[0]
+            return s.getsockname()[0] # PC IP that was used in the connection
         except:
-            return "127.0.0.1"
+            return "127.0.0.1" # Local host address in case we couldn't connect or don't have an IP
 
 def start_server():
     """Starts the server application."""
@@ -121,10 +125,12 @@ def start_server():
     # TCP server setup
     tcp_thread = threading.Thread(target=handle_tcp, args=(server_ip, server_tcp_port), daemon=True)
 
+    #Start running the threads
     broadcast_thread.start()
     udp_thread.start()
     tcp_thread.start()
 
+    #Make it so that the program wait for all of them to terminate
     broadcast_thread.join()
     udp_thread.join()
     tcp_thread.join()
