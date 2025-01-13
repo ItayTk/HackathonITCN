@@ -82,7 +82,9 @@ def handle_udp(server_ip, server_udp_port):
                 file_size -= 21
                 total_segments = file_size // 1024 if file_size % 1024 != 0 else (file_size // 1024) + 1
                 for i in tqdm(range(total_segments)):
-                    payload = struct.pack('!IBQQ', MAGIC_COOKIE, PAYLOAD_MESSAGE_TYPE, total_segments, i) + b'X' * min(1003, file_size)# !(Big Endian) I(4) B(1) Q(8) Q(8) is the format and sizes in bytes of the component of the packet
+                    format = "!IBQQ" + 'c' * min(1003, file_size)# !(Big Endian) I(4) B(1) Q(8) Q(8) is the format and sizes in bytes of the component of the packet
+                    payload = struct.pack(format, MAGIC_COOKIE, PAYLOAD_MESSAGE_TYPE, total_segments, i,'X'* min(1003, file_size))
+                    print(f"payload: {payload}")
                     file_size -= 1003
                     udp_socket.sendto(payload, client_address)
 
