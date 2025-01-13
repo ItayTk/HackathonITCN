@@ -4,6 +4,9 @@ import threading
 import time
 from datetime import datetime
 
+import colorama
+
+
 # ANSI Color Definitions
 class Colors:
     MAGENTA = '\033[95m'
@@ -32,14 +35,15 @@ def listen_for_offers(running):
             while running:
                 print(f"{Colors.MAGENTA}[Data Entry]{Colors.RESET}")
                 file_size = int(input("Enter file size to download (bytes): "))
-                tcp_connections = int(input("Enter number of TCP connections: "))
-                udp_connections = int(input("Enter number of UDP connections: "))
+                tcp_connections = int(input(f"Enter number of {Colors.YELLOW}TCP{Colors.RESET} connections: "))
+                udp_connections = int(input(f"Enter number of {Colors.CYAN}UDP{Colors.RESET} connections: "))
                 print(f"{Colors.GREEN}[CLIENT START] {Colors.RESET}Listening for offer requests")
 
                 data, addr = udp_socket.recvfrom(1024)
                 handle_offer(data, addr, running, file_size, tcp_connections, udp_connections)
     except Exception as e:
         print(f"{Colors.RED}[ERROR] Error in listening for offers: {e}")
+        listen_for_offers(running)
 
 def handle_offer(data, addr, running, file_size, tcp_connections, udp_connections):
     try:
