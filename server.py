@@ -2,7 +2,6 @@ import socket
 import threading
 import struct
 import time
-from operator import truediv
 
 from tqdm import tqdm
 import netifaces
@@ -24,6 +23,7 @@ MAGIC_COOKIE = 0xabcddcba
 OFFER_MESSAGE_TYPE = 0x2
 REQUEST_MESSAGE_TYPE = 0x3
 PAYLOAD_MESSAGE_TYPE = 0x4
+BUFFER = 1024
 
 
 def get_server_ip():
@@ -67,11 +67,11 @@ def listen_to_udp(server_ip, server_udp_port):
 
     # Set up udp socket
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
-        udp_socket.bind((server_ip, server_udp_port))  # Bind to the specific IP and port
+        udp_socket.bind(('', server_udp_port))  # Bind to the specific IP and port
 
         while True:
             try:
-                data, client_address = udp_socket.recvfrom(1024) # Wait for arrival with a maximum size of 1024 bytes
+                data, client_address = udp_socket.recvfrom(BUFFER) # Wait for arrival with a maximum size of 1024 bytes
 
                 # Silently reject and ignore packets that are too short
                 if len(data) < 13:
@@ -88,17 +88,17 @@ def listen_to_udp(server_ip, server_udp_port):
 
 def handle_udp(client_address, file_size):
     """Handles a UDP message transmission with a client."""
-    buffer = 1024
-    data_buffer = buffer - 21
+
+    data_buffer = BUFFER - 21
     print(f"{Colors.BLUE}[UDP PROCESSING]{Colors.RESET} Sending {file_size} bytes to {client_address}")
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
             # Sending data in segments
             total_segments = file_size // data_buffer if file_size % data_buffer == 0 else (file_size // data_buffer) + 1
             for i in tqdm(range(total_segments)):
-                bytes_to_send = min(file_size,1003)
+                bytes_to_send = min(file_size,data_buffer)
                 payload = struct.pack("!IBQQ", MAGIC_COOKIE, PAYLOAD_MESSAGE_TYPE, total_segments, i) + b'X' *bytes_to_send  # !(Big Endian) I(4) B(1) Q(8) Q(8) is the format and sizes in bytes of the component of the packet
-                file_size -= 1003
+                file_size -= data_buffer
                 udp_socket.sendto(payload, client_address)
 
             print(f"{Colors.GREEN}[UDP TRANSFER]{Colors.RESET} Completed transfer to {client_address}")
@@ -110,14 +110,14 @@ def listen_to_tcp(server_ip, server_tcp_port):
     """Handles a TCP connection establishment with a client."""
     #Set up a tcp packet
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_socket:
-        tcp_socket.bind((server_ip, server_tcp_port))  # Bind to the specific IP and port
+        tcp_socket.bind(('', server_tcp_port))  # Bind to the specific IP and port
         tcp_socket.listen() # Put the socket into listening mode
         while True:
             # Wait for incoming tcp connections
             connection, client_address = tcp_socket.accept()
             try:
                 print(f"{Colors.GREEN}[TCP CONNECTION]{Colors.RESET} Connected to {client_address}")
-                file_size = int(connection.recv(1024).strip().decode('utf-8')) # Wait for arrival with a maximum size of 1024 bytes as well as decoding the data
+                file_size = int(connection.recv(BUFFER).decode().strip()) # Wait for arrival with a maximum size of 1024 bytes as well as decoding the data
                 print(f"{Colors.CYAN}[TCP REQUEST]{Colors.RESET} Client requested {file_size} bytes")
 
                 threading.Thread(target=handle_tcp, args=(connection, client_address, file_size), daemon=True).start()

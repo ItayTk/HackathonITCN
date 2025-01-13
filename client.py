@@ -26,6 +26,7 @@ MESSAGE_TYPE_OFFER = 0x2
 MESSAGE_TYPE_REQUEST = 0x3
 MESSAGE_TYPE_PAYLOAD = 0x4
 UDP_PORT = 30001  # Listening port for UDP broadcasts
+BUFFER_SIZE = 1024
 
 def listen_for_offers():
     try:
@@ -40,7 +41,7 @@ def listen_for_offers():
                 udp_connections = int(input(f"Enter number of {Colors.CYAN}UDP{Colors.RESET} connections: "))
                 print(f"{Colors.GREEN}[CLIENT START] {Colors.RESET}Listening for offer requests")
 
-                data, addr = udp_socket.recvfrom(1024)
+                data, addr = udp_socket.recvfrom(BUFFER_SIZE)
                 handle_offer(data, addr, file_size, tcp_connections, udp_connections)
     except Exception as e:
         print(f"{Colors.RED}[ERROR] Error in listening for offers: {e}")
@@ -79,18 +80,21 @@ def tcp_download(server_address, tcp_port, file_size, connection_id):
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_socket:
             tcp_socket.connect((server_address, tcp_port))
-            tcp_socket.sendall(f"{file_size}\n".encode('utf-8'))
+            tcp_socket.sendall(f"{file_size}\n".encode())
 
             start_time = datetime.now()
-            received_data = tcp_socket.recv(file_size)
+            received_data = 0
+            while received_data < file_size:
+                received_data += len(tcp_socket.recv(BUFFER_SIZE))
             elapsed_time = (datetime.now() - start_time).total_seconds()
 
-            speed = len(received_data) * 8 / elapsed_time
+            speed = received_data * 8 / elapsed_time
             print(f"{Colors.YELLOW}[TCP #{connection_id}] {Colors.RESET}Finished, total time: {elapsed_time:.2f} seconds, total speed: {speed:.2f} bits/second")
     except Exception as e:
         print(f"{Colors.RED}[TCP #{connection_id}] Error: {e}")
 
 def udp_download(server_address, udp_port, file_size, connection_id):
+    header_size = 21
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
             request_packet = struct.pack('!IbQ', MAGIC_COOKIE, MESSAGE_TYPE_REQUEST, file_size)
@@ -101,10 +105,10 @@ def udp_download(server_address, udp_port, file_size, connection_id):
             total_packets = 0
 
             while True:
-                udp_socket.settimeout(1.0)
                 try:
-                    data, _ = udp_socket.recvfrom(1024)
-                    magic_cookie, message_type, total_segments, current_segment = struct.unpack('!IbQQ', data[:21])
+                    udp_socket.settimeout(1.0)
+                    data, _ = udp_socket.recvfrom(BUFFER_SIZE)
+                    magic_cookie, message_type, total_segments, current_segment = struct.unpack('!IbQQ', data[:header_size])
                     if magic_cookie == MAGIC_COOKIE and message_type == MESSAGE_TYPE_PAYLOAD:
                         total_packets = total_segments
                         received_packets += 1
@@ -122,6 +126,4 @@ def udp_download(server_address, udp_port, file_size, connection_id):
 
 if __name__ == "__main__":
 
-    listen_thread = threading.Thread(target=listen_for_offers, args=())
-    listen_thread.start()
-    listen_thread.join()
+    listen_for_offers()
