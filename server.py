@@ -35,13 +35,13 @@ def get_server_ip():
 
 def get_server_broadcast_ip(server_ip):
     """Get the netmask that belongs to the server ip."""
-    if str(server_ip) == "127.0.0.1":
+    if str(server_ip) == "127.0.0.1": # In case server IP retrieval failed
         return "127.255.255.255"
-    for interface in netifaces.interfaces():
+    for interface in netifaces.interfaces(): # Go through the network interfaces of the device and check which one has our IP
         addrs = netifaces.ifaddresses(interface)
-        if netifaces.AF_INET in addrs:
+        if netifaces.AF_INET in addrs: # Check if the interface has an IPv4 address assigned
             ipv4_info = addrs[netifaces.AF_INET][0]
-            if str(ipv4_info['addr']) == str(server_ip):
+            if str(ipv4_info['addr']) == str(server_ip): # Check if the interface IP matches our own in case of multiple active interfaces
                 return str(ipv4_info['broadcast'])
 
 def udp_offer_broadcast(server_udp_port, server_tcp_port, server_broadcast_ip):
@@ -80,12 +80,11 @@ def handle_udp(server_ip, server_udp_port):
                 print(f"{Colors.BLUE}[UDP PROCESSING]{Colors.WHITE} Sending {file_size} bytes to {client_address}")
 
                 # Sending data in segments
-                data_size = file_size - 13
-                total_segments = data_size // 1024 if data_size % 1024 != 0 else data_size // 1024 + 1
-                bytes_to_send = data_size
+                file_size -= 21
+                total_segments = file_size // 1024 if file_size % 1024 != 0 else file_size // 1024 + 1
                 for i in tqdm(range(total_segments)):
-                    payload = struct.pack('!IBQQ', MAGIC_COOKIE, PAYLOAD_MESSAGE_TYPE, total_segments, i) + b'X' * min(1024, bytes_to_send)# !(Big Endian) I(4) B(1) Q(8) Q(8) is the format and sizes in bytes of the component of the packet
-                    bytes_to_send -= 1024
+                    payload = struct.pack('!IBQQ', MAGIC_COOKIE, PAYLOAD_MESSAGE_TYPE, total_segments, i) + b'X' * min(1003, file_size)# !(Big Endian) I(4) B(1) Q(8) Q(8) is the format and sizes in bytes of the component of the packet
+                    file_size -= 1003
                     udp_socket.sendto(payload, client_address)
 
                 print(f"{Colors.GREEN}[UDP TRANSFER]{Colors.WHITE} Completed transfer to {client_address}")
