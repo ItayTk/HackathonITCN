@@ -25,6 +25,7 @@ OFFER_MESSAGE_TYPE = 0x2
 REQUEST_MESSAGE_TYPE = 0x3
 PAYLOAD_MESSAGE_TYPE = 0x4
 
+
 def get_server_ip():
     """Get the primary IP address of the server."""
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
@@ -33,6 +34,7 @@ def get_server_ip():
             return s.getsockname()[0] # PC IP that was used in the connection
         except:
             return "127.0.0.1" # Local host address in case we couldn't connect or don't have an IP
+
 
 def get_server_broadcast_ip(server_ip):
     """Get the netmask that belongs to the server ip."""
@@ -44,6 +46,7 @@ def get_server_broadcast_ip(server_ip):
             ipv4_info = addrs[netifaces.AF_INET][0]
             if str(ipv4_info['addr']) == str(server_ip): # Check if the interface IP matches our own in case of multiple active interfaces
                 return str(ipv4_info['broadcast'])
+
 
 def udp_offer_broadcast(server_udp_port, server_tcp_port, server_broadcast_ip):
     """Broadcasts UDP offers to clients."""
@@ -58,8 +61,9 @@ def udp_offer_broadcast(server_udp_port, server_tcp_port, server_broadcast_ip):
             print(f"{Colors.CYAN}[UDP OFFER]{Colors.RESET} Broadcast sent on {Colors.GREEN}UDP{Colors.RESET} port {Colors.RED}{server_udp_port}")
             time.sleep(1)
 
+
 def listen_to_udp(server_ip, server_udp_port):
-    """Handles a UDP connection with a client."""
+    """Handles a UDP connection start with a client."""
 
     # Set up udp socket
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
@@ -81,7 +85,10 @@ def listen_to_udp(server_ip, server_udp_port):
             except Exception as e:
                 print(f"{Colors.RED}[UDP ERROR]{Colors.RESET} {e}")
 
+
 def handle_udp(client_address, file_size):
+    """Handles a UDP message transmission with a client."""
+
     print(f"{Colors.BLUE}[UDP PROCESSING]{Colors.RESET} Sending {file_size} bytes to {client_address}")
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
@@ -99,8 +106,9 @@ def handle_udp(client_address, file_size):
     except Exception as e:
         print(f"{Colors.RED}[UDP ERROR]{Colors.RESET} {e}")
 
+
 def listen_to_tcp(server_ip, server_tcp_port):
-    """Handles a TCP connection with a client."""
+    """Handles a TCP connection establishment with a client."""
     #Set up a tcp packet
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_socket:
         tcp_socket.bind((server_ip, server_tcp_port))  # Bind to the specific IP and port
@@ -120,6 +128,8 @@ def listen_to_tcp(server_ip, server_tcp_port):
 
 
 def handle_tcp(connection, client_address, file_size):
+    """Handles a TCP message transfer with a client."""
+
     try:
         # Sending the requested file size worth of data
         connection.sendall(b'X' * file_size)  # Using sendall to transfer the data to ensure all the data will be sent
@@ -129,6 +139,8 @@ def handle_tcp(connection, client_address, file_size):
 
     finally:
         connection.close()
+
+
 def start_server():
     """Starts the server application."""
 
@@ -161,6 +173,7 @@ def start_server():
     broadcast_thread.join()
     udp_listen_thread.join()
     tcp_listen_thread.join()
+
 
 if __name__ == "__main__":
     start_server()
