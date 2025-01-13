@@ -88,7 +88,7 @@ def handle_udp(server_ip, server_udp_port):
 
                 print(f"{Colors.GREEN}[UDP TRANSFER]{Colors.RESET} Completed transfer to {client_address}")
             except Exception as e:
-                print(f"{Colors.RED}[ERROR]{Colors.RESET} {e}")
+                print(f"{Colors.RED}[UDP ERROR]{Colors.RESET} {e}")
 
 def handle_tcp(server_ip, server_tcp_port):
     """Handles a TCP connection with a client."""
@@ -109,7 +109,7 @@ def handle_tcp(server_ip, server_tcp_port):
             print(f"{Colors.BLUE}[TCP TRANSFER]{Colors.RESET} Sent {file_size} bytes to {address}")
 
         except Exception as e:
-            print(f"{Colors.RED}[ERROR]{Colors.RESET} {e}")
+            print(f"{Colors.RED}[TCP ERROR]{Colors.RESET} {e}")
 
         finally:
             connection.close()

@@ -22,7 +22,7 @@ MAGIC_COOKIE = 0xabcddcba
 MESSAGE_TYPE_OFFER = 0x2
 MESSAGE_TYPE_REQUEST = 0x3
 MESSAGE_TYPE_PAYLOAD = 0x4
-UDP_PORT = 13117  # Listening port for UDP broadcasts
+UDP_PORT = 30001  # Listening port for UDP broadcasts
 
 def listen_for_offers(running):
     try:
@@ -115,7 +115,7 @@ def udp_download(server_address, udp_port, file_size, connection_id):
 
 if __name__ == "__main__":
     running = True
-    print(f"{Colors.GREEN}[CLIENT START] {Colors.WHITE}Listening for offer requests...")
+    print(f"{Colors.GREEN}[CLIENT START] {Colors.WHITE}Listening for offer requests")
     listen_thread = threading.Thread(target=listen_for_offers, args=(running,))
     listen_thread.start()
     listen_thread.join()
