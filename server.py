@@ -14,9 +14,8 @@ class Colors:
     GREEN = '\033[92m'
     YELLOW = '\033[93m'
     RED = '\033[91m'
-    WHITE = '\033[0m'
+    RESET = '\033[0m'
     BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
 
 # Constants
 MAGIC_COOKIE = 0xabcddcba
@@ -54,7 +53,7 @@ def udp_offer_broadcast(server_udp_port, server_tcp_port, server_broadcast_ip):
 
         while True: # Repeated sending of the broadcast to the network
             udp_socket.sendto(offer_message, (server_broadcast_ip, server_udp_port))
-            print(f"{Colors.CYAN}[UDP OFFER]{Colors.WHITE} Broadcast sent on UDP port {Colors.RED}{server_udp_port}")
+            print(f"{Colors.CYAN}[UDP OFFER]{Colors.RESET} Broadcast sent on {Colors.GREEN}UDP{Colors.RESET} port {Colors.RED}{server_udp_port}")
             time.sleep(1)
 
 def handle_udp(server_ip, server_udp_port):
@@ -77,19 +76,19 @@ def handle_udp(server_ip, server_udp_port):
                 if cookie != MAGIC_COOKIE or msg_type != REQUEST_MESSAGE_TYPE: #Check that the message fields match ours
                     continue
 
-                print(f"{Colors.BLUE}[UDP PROCESSING]{Colors.WHITE} Sending {file_size} bytes to {client_address}")
+                print(f"{Colors.BLUE}[UDP PROCESSING]{Colors.RESET} Sending {file_size} bytes to {client_address}")
 
                 # Sending data in segments
                 file_size -= 21
-                total_segments = file_size // 1024 if file_size % 1024 != 0 else file_size // 1024 + 1
+                total_segments = file_size // 1024 if file_size % 1024 != 0 else (file_size // 1024) + 1
                 for i in tqdm(range(total_segments)):
                     payload = struct.pack('!IBQQ', MAGIC_COOKIE, PAYLOAD_MESSAGE_TYPE, total_segments, i) + b'X' * min(1003, file_size)# !(Big Endian) I(4) B(1) Q(8) Q(8) is the format and sizes in bytes of the component of the packet
                     file_size -= 1003
                     udp_socket.sendto(payload, client_address)
 
-                print(f"{Colors.GREEN}[UDP TRANSFER]{Colors.WHITE} Completed transfer to {client_address}")
+                print(f"{Colors.GREEN}[UDP TRANSFER]{Colors.RESET} Completed transfer to {client_address}")
             except Exception as e:
-                print(f"{Colors.RED}[ERROR]{Colors.WHITE} {e}")
+                print(f"{Colors.RED}[ERROR]{Colors.RESET} {e}")
 
 def handle_tcp(server_ip, server_tcp_port):
     """Handles a TCP connection with a client."""
@@ -101,16 +100,16 @@ def handle_tcp(server_ip, server_tcp_port):
         # Wait for incoming tcp connections
         connection, address = tcp_socket.accept()
         try:
-            print(f"{Colors.GREEN}[TCP CONNECTION]{Colors.WHITE} Connected to {address}")
+            print(f"{Colors.GREEN}[TCP CONNECTION]{Colors.RESET} Connected to {address}")
             file_size = int(connection.recv(1024).strip().decode('utf-8')) # Wait for arrival with a maximum size of 1024 bytes as well as decoding the data
-            print(f"{Colors.CYAN}[TCP REQUEST]{Colors.WHITE} Client requested {file_size} bytes")
+            print(f"{Colors.CYAN}[TCP REQUEST]{Colors.RESET} Client requested {file_size} bytes")
 
             # Sending the requested file size worth of data
             connection.sendall(b'X' * file_size) # Using sendall to transfer the data to ensure all the data will be sent
-            print(f"{Colors.BLUE}[TCP TRANSFER]{Colors.WHITE} Sent {file_size} bytes to {address}")
+            print(f"{Colors.BLUE}[TCP TRANSFER]{Colors.RESET} Sent {file_size} bytes to {address}")
 
         except Exception as e:
-            print(f"{Colors.RED}[ERROR]{Colors.WHITE} {e}")
+            print(f"{Colors.RED}[ERROR]{Colors.RESET} {e}")
 
         finally:
             connection.close()
@@ -127,9 +126,9 @@ def start_server():
     server_tcp_port = 12345
 
     #Announce setup
-    print(f"{Colors.MAGENTA}[SERVER START]{Colors.WHITE} Server started")
-    print(f"{Colors.MAGENTA}[TCP]{Colors.WHITE} listening on {Colors.GREEN}{server_ip}{Colors.WHITE}:{Colors.RED}{server_tcp_port}")
-    print(f"{Colors.MAGENTA}[UDP]{Colors.WHITE} listening on {Colors.GREEN}{server_ip}{Colors.WHITE}:{Colors.RED}{server_udp_port}")
+    print(f"{Colors.MAGENTA}[SERVER START]{Colors.RESET} Server started")
+    print(f"{Colors.MAGENTA}[TCP]{Colors.RESET} listening on \033[92;1m{server_ip}{Colors.RESET}:{Colors.RED}{server_tcp_port}")
+    print(f"{Colors.MAGENTA}[UDP]{Colors.RESET} listening on \033[92;1m{server_ip}{Colors.RESET}:{Colors.RED}{server_udp_port}")
 
     # Start UDP offer broadcast thread
     broadcast_thread = threading.Thread(target=udp_offer_broadcast, args=(server_udp_port, server_tcp_port,server_broadcast_ip), daemon=True)
