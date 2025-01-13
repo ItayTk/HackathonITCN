@@ -83,28 +83,25 @@ def listen_to_udp(server_ip, server_udp_port):
                     continue
                 threading.Thread(target=handle_udp, args=(client_address, file_size), daemon=True).start()
             except Exception as e:
-                print(f"{Colors.RED}[UDP ERROR]{Colors.RESET} {e}")
+                print(f"{Colors.RED}[UDP ERROR] {e} {Colors.RESET}")
 
 
 def handle_udp(client_address, file_size):
     """Handles a UDP message transmission with a client."""
-
+    buffer = 1024
+    data_buffer = buffer - 21
     print(f"{Colors.BLUE}[UDP PROCESSING]{Colors.RESET} Sending {file_size} bytes to {client_address}")
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
             # Sending data in segments
-            file_size -= 21
-            total_segments = file_size // 1024 if file_size % 1024 == 0 else (file_size // 1024) + 1
+            total_segments = file_size // buffer if file_size % buffer == 0 else (file_size // buffer) + 1
             for i in tqdm(range(total_segments)):
-                format = f"!IBQQ{min(1003, file_size)}s" # !(Big Endian) I(4) B(1) Q(8) Q(8) is the format and sizes in bytes of the component of the packet
-                data = ('X' * min(1003, file_size)).encode('utf-8')
-                payload = struct.pack(format, MAGIC_COOKIE, PAYLOAD_MESSAGE_TYPE, total_segments, i,data)
-                file_size -= 1003
+                payload = struct.pack("!IBQQ", MAGIC_COOKIE, PAYLOAD_MESSAGE_TYPE, total_segments, i) + b'X' *data_buffer  # !(Big Endian) I(4) B(1) Q(8) Q(8) is the format and sizes in bytes of the component of the packet
                 udp_socket.sendto(payload, client_address)
 
             print(f"{Colors.GREEN}[UDP TRANSFER]{Colors.RESET} Completed transfer to {client_address}")
     except Exception as e:
-        print(f"{Colors.RED}[UDP ERROR]{Colors.RESET} {e}")
+        print(f"{Colors.RED}[UDP ERROR] {e} {Colors.RESET}")
 
 
 def listen_to_tcp(server_ip, server_tcp_port):
@@ -124,7 +121,7 @@ def listen_to_tcp(server_ip, server_tcp_port):
                 threading.Thread(target=handle_tcp, args=(connection, client_address, file_size), daemon=True).start()
 
             except Exception as e:
-                print(f"{Colors.RED}[TCP ERROR]{Colors.RESET} {e}")
+                print(f"{Colors.RED}[TCP ERROR] {e} {Colors.RESET}")
 
 
 def handle_tcp(connection, client_address, file_size):
@@ -135,7 +132,7 @@ def handle_tcp(connection, client_address, file_size):
         connection.sendall(b'X' * file_size)  # Using sendall to transfer the data to ensure all the data will be sent
         print(f"{Colors.BLUE}[TCP TRANSFER]{Colors.RESET} Sent {file_size} bytes to {client_address}")
     except Exception as e:
-        print(f"{Colors.RED}[TCP ERROR]{Colors.RESET} {e}")
+        print(f"{Colors.RED}[TCP ERROR] {e} {Colors.RESET}")
 
     finally:
         connection.close()

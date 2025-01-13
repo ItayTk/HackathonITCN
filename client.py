@@ -3,6 +3,7 @@ import struct
 import threading
 import time
 from datetime import datetime
+from logging import exception
 
 import colorama
 
@@ -99,8 +100,8 @@ def udp_download(server_address, udp_port, file_size, connection_id):
             received_packets = 0
             total_packets = 0
 
+            udp_socket.settimeout(1.0)
             while True:
-                udp_socket.settimeout(1.0)
                 try:
                     data, _ = udp_socket.recvfrom(1024)
                     magic_cookie, message_type, total_segments, current_segment = struct.unpack('!IbQQ', data[:21])
@@ -110,6 +111,8 @@ def udp_download(server_address, udp_port, file_size, connection_id):
                 except socket.timeout:
                     break
 
+            if received_packets == 0:
+                raise exception("No data received")
             elapsed_time = (datetime.now() - start_time).total_seconds()
             percentage_received = (received_packets / total_packets) * 100 if total_packets > 0 else 0
             speed = (received_packets * 1024 * 8) / elapsed_time
@@ -125,11 +128,3 @@ if __name__ == "__main__":
     listen_thread = threading.Thread(target=listen_for_offers, args=(running,))
     listen_thread.start()
     listen_thread.join()
-
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print(f"{Colors.RED}[SHUTDOWN] {Colors.RESET}Shutting down client...")
-        running = False
-        listen_thread.join()
