@@ -27,13 +27,13 @@ MESSAGE_TYPE_REQUEST = 0x3
 MESSAGE_TYPE_PAYLOAD = 0x4
 UDP_PORT = 30001  # Listening port for UDP broadcasts
 
-def listen_for_offers(running):
+def listen_for_offers():
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
             udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             udp_socket.bind(('', UDP_PORT))
 
-            while running:
+            while True:
                 print(f"{Colors.MAGENTA}[Data Entry]{Colors.RESET}")
                 file_size = int(input("Enter file size to download (bytes): "))
                 tcp_connections = int(input(f"Enter number of {Colors.YELLOW}TCP{Colors.RESET} connections: "))
@@ -41,22 +41,22 @@ def listen_for_offers(running):
                 print(f"{Colors.GREEN}[CLIENT START] {Colors.RESET}Listening for offer requests")
 
                 data, addr = udp_socket.recvfrom(1024)
-                handle_offer(data, addr, running, file_size, tcp_connections, udp_connections)
+                handle_offer(data, addr, file_size, tcp_connections, udp_connections)
     except Exception as e:
         print(f"{Colors.RED}[ERROR] Error in listening for offers: {e}")
-        listen_for_offers(running)
+        listen_for_offers()
 
-def handle_offer(data, addr, running, file_size, tcp_connections, udp_connections):
+def handle_offer(data, addr, file_size, tcp_connections, udp_connections):
     try:
         magic_cookie, message_type, udp_port, tcp_port = struct.unpack('!IbHH', data[:9])
         if magic_cookie == MAGIC_COOKIE and message_type == MESSAGE_TYPE_OFFER:
             server_address = addr[0]
-            print(f"{Colors.CYAN}[UDP OFFER] {Colors.RESET}Received offer from {server_address}")
-            run_speed_test(server_address, udp_port, tcp_port, running, file_size, tcp_connections, udp_connections)
+            print(f"{Colors.CYAN}[Broadcast OFFER] {Colors.RESET}Received offer from {server_address}")
+            run_speed_test(server_address, udp_port, tcp_port, file_size, tcp_connections, udp_connections)
     except Exception as e:
         print(f"{Colors.RED}[ERROR] Error in handling offer: {e}")
 
-def run_speed_test(server_address, udp_port, tcp_port, running, file_size, tcp_connections, udp_connections):
+def run_speed_test(server_address, udp_port, tcp_port, file_size, tcp_connections, udp_connections):
 
     threads = []
 
@@ -100,8 +100,8 @@ def udp_download(server_address, udp_port, file_size, connection_id):
             received_packets = 0
             total_packets = 0
 
-            udp_socket.settimeout(1.0)
             while True:
+                udp_socket.settimeout(1.0)
                 try:
                     data, _ = udp_socket.recvfrom(1024)
                     magic_cookie, message_type, total_segments, current_segment = struct.unpack('!IbQQ', data[:21])
@@ -111,11 +111,9 @@ def udp_download(server_address, udp_port, file_size, connection_id):
                 except socket.timeout:
                     break
 
-            if received_packets == 0:
-                raise exception("No data received")
             elapsed_time = (datetime.now() - start_time).total_seconds()
             percentage_received = (received_packets / total_packets) * 100 if total_packets > 0 else 0
-            speed = (received_packets * 1024 * 8) / elapsed_time
+            speed = (received_packets * file_size * 8) / elapsed_time
 
             print(f"{Colors.CYAN}[UDP #{connection_id}] {Colors.RESET}Finished, total time: {elapsed_time:.2f} seconds, total speed: {speed:.2f} bits/second, percentage received: {percentage_received:.2f}%")
     except Exception as e:
@@ -123,8 +121,7 @@ def udp_download(server_address, udp_port, file_size, connection_id):
 
 
 if __name__ == "__main__":
-    running = True
 
-    listen_thread = threading.Thread(target=listen_for_offers, args=(running,))
+    listen_thread = threading.Thread(target=listen_for_offers, args=())
     listen_thread.start()
     listen_thread.join()

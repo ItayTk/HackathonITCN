@@ -94,9 +94,11 @@ def handle_udp(client_address, file_size):
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
             # Sending data in segments
-            total_segments = file_size // buffer if file_size % buffer == 0 else (file_size // buffer) + 1
+            total_segments = file_size // data_buffer if file_size % data_buffer == 0 else (file_size // data_buffer) + 1
             for i in tqdm(range(total_segments)):
-                payload = struct.pack("!IBQQ", MAGIC_COOKIE, PAYLOAD_MESSAGE_TYPE, total_segments, i) + b'X' *data_buffer  # !(Big Endian) I(4) B(1) Q(8) Q(8) is the format and sizes in bytes of the component of the packet
+                bytes_to_send = min(file_size,1003)
+                payload = struct.pack("!IBQQ", MAGIC_COOKIE, PAYLOAD_MESSAGE_TYPE, total_segments, i) + b'X' *bytes_to_send  # !(Big Endian) I(4) B(1) Q(8) Q(8) is the format and sizes in bytes of the component of the packet
+                file_size -= 1003
                 udp_socket.sendto(payload, client_address)
 
             print(f"{Colors.GREEN}[UDP TRANSFER]{Colors.RESET} Completed transfer to {client_address}")
