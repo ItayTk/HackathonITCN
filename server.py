@@ -85,7 +85,6 @@ def handle_udp(server_ip, server_udp_port):
                     format = f"!IBQQ{min(1003, file_size)}s" # !(Big Endian) I(4) B(1) Q(8) Q(8) is the format and sizes in bytes of the component of the packet
                     data = ('X' * min(1003, file_size)).encode('utf-8')
                     payload = struct.pack(format, MAGIC_COOKIE, PAYLOAD_MESSAGE_TYPE, total_segments, i,data)
-                    print(f"payload: {payload}")
                     file_size -= 1003
                     udp_socket.sendto(payload, client_address)
 
