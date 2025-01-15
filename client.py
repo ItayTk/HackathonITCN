@@ -1,11 +1,7 @@
 import socket
 import struct
 import threading
-import time
 from datetime import datetime
-from logging import exception
-
-import colorama
 
 
 # ANSI Color Definitions

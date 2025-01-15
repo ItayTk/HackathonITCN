@@ -23,7 +23,15 @@ MAGIC_COOKIE = 0xabcddcba
 OFFER_MESSAGE_TYPE = 0x2
 REQUEST_MESSAGE_TYPE = 0x3
 PAYLOAD_MESSAGE_TYPE = 0x4
+
 BUFFER = 1024
+data_buffer = BUFFER - 21
+server_udp_port = 30001
+server_tcp_port = 12345
+
+OFFER_MESSAGE_FORMAT = '!IBHH' # !(Big endian) I(4) B(1) H(2) H(2) is the format and sizes in bytes of the components of the packet
+REQUEST_MESSAGE_FORMAT = '!IBQ' # !(Big Endian) I(4) B(1) Q(8) is the format and sizes in bytes of the components of the packet
+PAYLOAD_MESSAGE_FORMAT = '!IBQQ' # !(Big Endian) I(4) B(1) Q(8) Q(8) is the format and sizes in bytes of the component of the packet
 
 
 def get_server_ip():
@@ -54,7 +62,7 @@ def udp_offer_broadcast(server_udp_port, server_tcp_port, server_broadcast_ip):
     #Set up an udp packet acts as a broadcast
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
         udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        offer_message = struct.pack('!IBHH', MAGIC_COOKIE, OFFER_MESSAGE_TYPE, server_udp_port, server_tcp_port) # !(Big endian) I(4) B(1) H(2) H(2) is the format and sizes in bytes of the components of the packet
+        offer_message = struct.pack(OFFER_MESSAGE_FORMAT, MAGIC_COOKIE, OFFER_MESSAGE_TYPE, server_udp_port, server_tcp_port)
 
         while True: # Repeated sending of the broadcast to the network
             udp_socket.sendto(offer_message, (server_broadcast_ip, server_udp_port))
@@ -78,7 +86,7 @@ def listen_to_udp(server_ip, server_udp_port):
                     continue
 
                 # Unpack and validate the packet
-                cookie, msg_type, file_size = struct.unpack('!IBQ', data)# !(Big Endian) I(4) B(1) Q(8) is the format and sizes in bytes of the components of the packet
+                cookie, msg_type, file_size = struct.unpack(REQUEST_MESSAGE_FORMAT, data)
                 if cookie != MAGIC_COOKIE or msg_type != REQUEST_MESSAGE_TYPE: #Check that the message fields match ours
                     continue
                 threading.Thread(target=handle_udp, args=(client_address, file_size), daemon=True).start()
@@ -89,7 +97,7 @@ def listen_to_udp(server_ip, server_udp_port):
 def handle_udp(client_address, file_size):
     """Handles a UDP message transmission with a client."""
 
-    data_buffer = BUFFER - 21
+
     print(f"{Colors.BLUE}[UDP PROCESSING]{Colors.RESET} Sending {file_size} bytes to {client_address}")
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
@@ -97,7 +105,7 @@ def handle_udp(client_address, file_size):
             total_segments = file_size // data_buffer if file_size % data_buffer == 0 else (file_size // data_buffer) + 1
             for i in tqdm(range(total_segments)):
                 bytes_to_send = min(file_size,data_buffer)
-                payload = struct.pack("!IBQQ", MAGIC_COOKIE, PAYLOAD_MESSAGE_TYPE, total_segments, i) + b'X' *bytes_to_send  # !(Big Endian) I(4) B(1) Q(8) Q(8) is the format and sizes in bytes of the component of the packet
+                payload = struct.pack(PAYLOAD_MESSAGE_FORMAT, MAGIC_COOKIE, PAYLOAD_MESSAGE_TYPE, total_segments, i) + b'X' *bytes_to_send
                 file_size -= data_buffer
                 udp_socket.sendto(payload, client_address)
 
@@ -146,8 +154,6 @@ def start_server():
     #Set up server parameters
     server_ip = get_server_ip()
     server_broadcast_ip = get_server_broadcast_ip(server_ip)
-    server_udp_port = 30001
-    server_tcp_port = 12345
 
     #Announce setup
     print(f"{Colors.MAGENTA}[SERVER START]{Colors.RESET} Server started")
