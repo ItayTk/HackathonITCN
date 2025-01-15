@@ -25,14 +25,15 @@ REQUEST_MESSAGE_TYPE = 0x3
 PAYLOAD_MESSAGE_TYPE = 0x4
 
 BUFFER = 1024
-data_buffer = BUFFER - 21
-server_udp_port = 30001
-server_tcp_port = 12345
+DATA_BUFFER = BUFFER - 21
+SERVER_UDP_PORT = 30001
+SERVER_TCP_PORT = 12345
 
 OFFER_MESSAGE_FORMAT = '!IBHH' # !(Big endian) I(4) B(1) H(2) H(2) is the format and sizes in bytes of the components of the packet
 REQUEST_MESSAGE_FORMAT = '!IBQ' # !(Big Endian) I(4) B(1) Q(8) is the format and sizes in bytes of the components of the packet
 PAYLOAD_MESSAGE_FORMAT = '!IBQQ' # !(Big Endian) I(4) B(1) Q(8) Q(8) is the format and sizes in bytes of the component of the packet
 
+REQUEST_MESSAGE_HEADER_SIZE = 13
 
 def get_server_ip():
     """Get the primary IP address of the server."""
@@ -82,7 +83,7 @@ def listen_to_udp(server_ip, server_udp_port):
                 data, client_address = udp_socket.recvfrom(BUFFER) # Wait for arrival with a maximum size of 1024 bytes
 
                 # Silently reject and ignore packets that are too short
-                if len(data) < 13:
+                if len(data) < REQUEST_MESSAGE_HEADER_SIZE:
                     continue
 
                 # Unpack and validate the packet
@@ -102,11 +103,11 @@ def handle_udp(client_address, file_size):
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
             # Sending data in segments
-            total_segments = file_size // data_buffer if file_size % data_buffer == 0 else (file_size // data_buffer) + 1
+            total_segments = file_size // DATA_BUFFER if file_size % DATA_BUFFER == 0 else (file_size // DATA_BUFFER) + 1
             for i in range(total_segments):
-                bytes_to_send = min(file_size,data_buffer)
+                bytes_to_send = min(file_size, DATA_BUFFER)
                 payload = struct.pack(PAYLOAD_MESSAGE_FORMAT, MAGIC_COOKIE, PAYLOAD_MESSAGE_TYPE, total_segments, i) + b'X' *bytes_to_send
-                file_size -= data_buffer
+                file_size -= DATA_BUFFER
                 udp_socket.sendto(payload, client_address)
                 time.sleep(0.001)
 
@@ -146,6 +147,7 @@ def handle_tcp(connection, client_address, file_size):
         print(f"{Colors.RED}[TCP ERROR] {e} {Colors.RESET}")
 
     finally:
+        print(f"{Colors.BLUE}[TCP FINISHED]{Colors.RESET}")
         connection.close()
 
 
@@ -158,17 +160,17 @@ def start_server():
 
     #Announce setup
     print(f"{Colors.MAGENTA}[SERVER START]{Colors.RESET} Server started")
-    print(f"{Colors.MAGENTA}[TCP]{Colors.RESET} listening on \033[92;1m{server_ip}{Colors.RESET}:{Colors.RED}{server_tcp_port}")
-    print(f"{Colors.MAGENTA}[UDP]{Colors.RESET} listening on \033[92;1m{server_ip}{Colors.RESET}:{Colors.RED}{server_udp_port}")
+    print(f"{Colors.MAGENTA}[TCP]{Colors.RESET} listening on \033[92;1m{server_ip}{Colors.RESET}:{Colors.RED}{SERVER_TCP_PORT}")
+    print(f"{Colors.MAGENTA}[UDP]{Colors.RESET} listening on \033[92;1m{server_ip}{Colors.RESET}:{Colors.RED}{SERVER_UDP_PORT}")
 
     # Start UDP offer broadcast thread
-    broadcast_thread = threading.Thread(target=udp_offer_broadcast, args=(server_udp_port, server_tcp_port,server_broadcast_ip), daemon=True)
+    broadcast_thread = threading.Thread(target=udp_offer_broadcast, args=(SERVER_UDP_PORT, SERVER_TCP_PORT, server_broadcast_ip), daemon=True)
 
     # UDP server setup
-    udp_listen_thread = threading.Thread(target=listen_to_udp, args=(server_ip, server_udp_port), daemon=True)
+    udp_listen_thread = threading.Thread(target=listen_to_udp, args=(server_ip, SERVER_UDP_PORT), daemon=True)
 
     # TCP server setup
-    tcp_listen_thread = threading.Thread(target=listen_to_tcp, args=(server_ip, server_tcp_port), daemon=True)
+    tcp_listen_thread = threading.Thread(target=listen_to_tcp, args=(server_ip, SERVER_TCP_PORT), daemon=True)
 
     #Start running the threads
     broadcast_thread.start()
