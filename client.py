@@ -33,29 +33,18 @@ def listen_for_offers():
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
             udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             udp_socket.bind(('', UDP_PORT))
-
             while True:
-                print(f"{Colors.MAGENTA}[Data Entry]{Colors.RESET}")
-                file_size = int(input("Enter file size to download (bytes): "))
-                tcp_connections = int(input(f"Enter number of {Colors.YELLOW}TCP{Colors.RESET} connections: "))
-                udp_connections = int(input(f"Enter number of {Colors.CYAN}UDP{Colors.RESET} connections: "))
-                print(f"{Colors.GREEN}[CLIENT START] {Colors.RESET}Listening for offer requests")
-
                 data, addr = udp_socket.recvfrom(BUFFER_SIZE)
-                handle_offer(data, addr, file_size, tcp_connections, udp_connections)
+                cookie, msg_type, udp_port, tcp_port = struct.unpack('!IBHH', data[:9])
+                if cookie != MAGIC_COOKIE or msg_type != MESSAGE_TYPE_OFFER:  # Check that the message fields match ours
+                    return
+                server_address = addr[0]
+                print(f"{Colors.CYAN}[Broadcast OFFER] {Colors.RESET}Received offer from {server_address}")
+                run_speed_test(server_address, udp_port, tcp_port, file_size, tcp_connections, udp_connections)
+                return
     except Exception as e:
-        print(f"{Colors.RED}[ERROR] Error in listening for offers: {e}")
-        listen_for_offers()
+        print(f"{Colors.RED}[ERROR] Error while listening to offers: {e}")
 
-def handle_offer(data, addr, file_size, tcp_connections, udp_connections):
-    try:
-        magic_cookie, message_type, udp_port, tcp_port = struct.unpack('!IbHH', data[:9])
-        if magic_cookie == MAGIC_COOKIE and message_type == MESSAGE_TYPE_OFFER:
-            server_address = addr[0]
-            print(f"{Colors.CYAN}[Broadcast OFFER] {Colors.RESET}Received offer from {server_address}")
-            run_speed_test(server_address, udp_port, tcp_port, file_size, tcp_connections, udp_connections)
-    except Exception as e:
-        print(f"{Colors.RED}[ERROR] Error in handling offer: {e}")
 
 def run_speed_test(server_address, udp_port, tcp_port, file_size, tcp_connections, udp_connections):
 
@@ -86,6 +75,7 @@ def tcp_download(server_address, tcp_port, file_size, connection_id):
             received_data = 0
             while received_data < file_size:
                 received_data += len(tcp_socket.recv(BUFFER_SIZE))
+            print(received_data)
             elapsed_time = (datetime.now() - start_time).total_seconds()
 
             speed = received_data * 8 / elapsed_time
@@ -125,5 +115,13 @@ def udp_download(server_address, udp_port, file_size, connection_id):
 
 
 if __name__ == "__main__":
-
-    listen_for_offers()
+    while True:
+        try:
+            print(f"{Colors.MAGENTA}[Data Entry]{Colors.RESET}")
+            file_size = int(input("Enter file size to download (bytes): "))
+            tcp_connections = int(input(f"Enter number of {Colors.YELLOW}TCP{Colors.RESET} connections: "))
+            udp_connections = int(input(f"Enter number of {Colors.CYAN}UDP{Colors.RESET} connections: "))
+            print(f"{Colors.GREEN}[CLIENT START] {Colors.RESET}Listening for offer requests")
+            listen_for_offers()
+        except ValueError:
+            print(f"{Colors.RED}[ERROR] Invalid data")

@@ -67,7 +67,7 @@ def listen_to_udp(server_ip, server_udp_port):
 
     # Set up udp socket
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
-        udp_socket.bind(('', server_udp_port))  # Bind to the specific IP and port
+        udp_socket.bind((server_ip, server_udp_port))  # Bind to the specific IP and port
 
         while True:
             try:
@@ -110,7 +110,7 @@ def listen_to_tcp(server_ip, server_tcp_port):
     """Handles a TCP connection establishment with a client."""
     #Set up a tcp packet
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_socket:
-        tcp_socket.bind(('', server_tcp_port))  # Bind to the specific IP and port
+        tcp_socket.bind((server_ip, server_tcp_port))  # Bind to the specific IP and port
         tcp_socket.listen() # Put the socket into listening mode
         while True:
             # Wait for incoming tcp connections
