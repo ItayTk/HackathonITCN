@@ -149,7 +149,7 @@ def udp_download(server_address, udp_port, file_size, connection_id):
 
 
 if __name__ == "__main__":
-    print(f"""{Colors.YELLOW}    
+    print(f"""\033[93;1m   
 ___________________________________
 |  ⣤⣤⣤⣤⣀⠀⠀⣤⣤⣤⣤⡄⠀⣤⣤⣤⣤⠀⣤⣤⣤⣤⣤      ⠀⠀⠀⠀ 
 |  ⣿⡇⠀⠈⢻⣧⠀⣿⡇⠀⠀⠀⠀⣿⠀⠀⠀⠀⠀⠀  ⢠⡾⠃      ⠀⠀⠀ 
