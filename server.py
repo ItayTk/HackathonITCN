@@ -103,11 +103,12 @@ def handle_udp(client_address, file_size):
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
             # Sending data in segments
             total_segments = file_size // data_buffer if file_size % data_buffer == 0 else (file_size // data_buffer) + 1
-            for i in tqdm(range(total_segments)):
+            for i in range(total_segments):
                 bytes_to_send = min(file_size,data_buffer)
                 payload = struct.pack(PAYLOAD_MESSAGE_FORMAT, MAGIC_COOKIE, PAYLOAD_MESSAGE_TYPE, total_segments, i) + b'X' *bytes_to_send
                 file_size -= data_buffer
                 udp_socket.sendto(payload, client_address)
+                time.sleep(0.001)
 
             print(f"{Colors.GREEN}[UDP TRANSFER]{Colors.RESET} Completed transfer to {client_address}")
     except Exception as e:
